@@ -1,0 +1,19 @@
+name: Deploy to Cloud Run
+on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Build and push
+        run: |
+          docker build -t gcr.io/${{ vars.GCP_PROJECT }}/dtc-brightbean:${{ github.sha }} .
+          docker push gcr.io/${{ vars.GCP_PROJECT }}/dtc-brightbean:${{ github.sha }}
+      - name: Deploy web
+        run: gcloud run services replace cloudrun/web.yaml --region us-central1
+      - name: Deploy worker
+        run: gcloud run services replace cloudrun/worker.yaml --region us-central1
