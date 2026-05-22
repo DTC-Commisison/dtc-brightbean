@@ -1,0 +1,30 @@
+name: Deploy to Railway
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+      - name: Deploy
+        run: railway up --service dtc-brightbean --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Report deployment to Port
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          operation: UPSERT
+          identifier: dtc-brightbean-${{ github.sha }}
+          blueprint: deployment
+          properties: |
+            {
+              "status": "SUCCESS",
+              "triggered_by": "${{ github.sha }}",
+              "environment": "dtc_commission_phase0",
+              "service": "dtc-brightbean"
+            }
