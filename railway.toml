@@ -6,4 +6,4 @@ dockerfilePath = "Dockerfile"
 healthcheckPath = "/health/"
 healthcheckTimeout = 30
 restartPolicyType = "always"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 10
