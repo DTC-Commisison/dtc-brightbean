@@ -3,6 +3,6 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python manage.py migrate --noinput && echo 'MIGRATE_DONE' && python manage.py process_tasks --verbosity=2 2>&1"
+startCommand = "python worker.py"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
