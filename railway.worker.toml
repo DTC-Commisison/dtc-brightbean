@@ -1,0 +1,8 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python manage.py migrate --noinput && python manage.py process_tasks"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
