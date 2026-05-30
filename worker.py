@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Worker entrypoint — runs Django migrations then starts background task processor."""
 import os
-import sys
 import subprocess
+import sys
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 
@@ -19,3 +19,4 @@ print("[2/2] Starting process_tasks...", flush=True)
 sys.exit(
     subprocess.run([sys.executable, "manage.py", "process_tasks"]).returncode
 )
+
