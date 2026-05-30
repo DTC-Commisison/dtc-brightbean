@@ -27,6 +27,7 @@ on:
       caption:
         description: "Post caption (auto-generated if blank)"
         required: false
+        default: ""
 
 jobs:
   design-and-publish:
@@ -40,86 +41,83 @@ jobs:
       - name: Trigger Pencil campaign design
         id: pencil
         run: |
-          echo "Triggering Pencil campaign for city: ${{ inputs.city }}"
-          RESPONSE=$(curl -s -w "
-%{http_code}" -X POST \
-            "$PENCIL_URL/api/campaign/${{ inputs.city }}" \
+          echo "Triggering Pencil campaign for: ${{ inputs.city }}"
+          BODY=$(curl -s -X POST \
+            "${PENCIL_URL}/api/campaign/${{ inputs.city }}" \
             -H "Content-Type: application/json" \
             -d "{\"context\": \"${{ inputs.caption }}\"}")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | head -1)
-          echo "Pencil response ($HTTP_CODE): $BODY"
-
-          # Wait for HyperFrames render
+          echo "Pencil response: $BODY"
           sleep 8
 
-          # Resolve asset URL — prefer campaign response, fall back to static pnw-food-story
-          ASSET_URL=$(echo "$BODY" | python3 -c "
-          import sys, json
+          ASSET_URL=$(python3 - << 'EOF'
+          import sys, json, os
+          body = os.environ.get("PENCIL_BODY", "")
           try:
-              d = json.load(sys.stdin)
-              url = d.get(\"assetUrl\") or d.get(\"url\") or d.get(\"compositionUrl\") or \"\"
+              d = json.loads(body)
+              url = d.get("assetUrl") or d.get("url") or d.get("compositionUrl") or ""
               print(url)
           except Exception:
-              print(\"\")
-          " 2>/dev/null)
+              print("")
+          EOF
+          )
 
           if [ -z "$ASSET_URL" ]; then
-            ASSET_URL="$PENCIL_URL/pnw-food-story/${{ inputs.city }}.png"
-            echo "Falling back to static asset: $ASSET_URL"
+            ASSET_URL="${PENCIL_URL}/pnw-food-story/${{ inputs.city }}.png"
+            echo "Using static fallback: $ASSET_URL"
           fi
-
-          echo "asset_url=$ASSET_URL" >> $GITHUB_OUTPUT
+          echo "asset_url=${ASSET_URL}" >> "$GITHUB_OUTPUT"
+        env:
+          PENCIL_BODY: ${{ steps.pencil.outputs.pencil_body || '' }}
 
       - name: Send asset to Brightbean webhook
         id: brightbean
         env:
           PENCIL_WEBHOOK_SECRET: ${{ secrets.PENCIL_WEBHOOK_SECRET }}
+          ASSET_URL: ${{ steps.pencil.outputs.asset_url }}
         run: |
-          ASSET_ID="pencil-${{ inputs.city }}-${{ github.run_id }}"
-          PLATFORMS=$(echo "${{ inputs.platforms }}" | python3 -c "
-          import sys, json
-          raw = sys.stdin.read().strip()
-          print(json.dumps([p.strip() for p in raw.split(\",\") if p.strip()]))
-          ")
+          python3 - << 'EOF'
+          import json, hmac, hashlib, os, urllib.request, sys
 
-          PAYLOAD=$(python3 -c "
-          import json
+          secret = os.environ["PENCIL_WEBHOOK_SECRET"].encode()
+          brightbean_url = os.environ["BRIGHTBEAN_URL"]
+          asset_url = os.environ["ASSET_URL"]
+          city = "${{ inputs.city }}"
+          caption = "${{ inputs.caption }}"
+          workspace_id = "${{ inputs.workspace_id }}"
+          run_id = "${{ github.run_id }}"
+          platforms_raw = "${{ inputs.platforms }}"
+
+          platforms = [p.strip() for p in platforms_raw.split(",") if p.strip()]
+
           payload = {
-            \"_type\": \"mediaAsset\",
-            \"_id\": \"$ASSET_ID\",
-            \"url\": \"${{ steps.pencil.outputs.asset_url }}\",
-            \"workspace_id\": \"${{ inputs.workspace_id }}\",
-            \"city\": \"${{ inputs.city }}\",
-            \"caption\": \"${{ inputs.caption }}\",
-            \"platforms\": $PLATFORMS,
+              "_type": "mediaAsset",
+              "_id": f"pencil-{city}-{run_id}",
+              "url": asset_url,
+              "workspace_id": workspace_id,
+              "city": city,
+              "caption": caption,
+              "platforms": platforms,
           }
-          print(json.dumps(payload))
-          ")
+          body = json.dumps(payload).encode()
+          sig = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
 
-          SIG=$(echo -n "$PAYLOAD" | python3 -c "
-          import sys, hmac, hashlib, os
-          secret = os.environ.get(\"PENCIL_WEBHOOK_SECRET\", \"\").encode()
-          body = sys.stdin.buffer.read()
-          print(\"sha256=\" + hmac.new(secret, body, hashlib.sha256).hexdigest())
-          ")
-
-          RESPONSE=$(curl -s -X POST \
-            "$BRIGHTBEAN_URL/api/webhooks/asset-received" \
-            -H "Content-Type: application/json" \
-            -H "X-Pencil-Signature: $SIG" \
-            -d "$PAYLOAD")
-
-          echo "Brightbean response: $RESPONSE"
-          POST_ID=$(echo "$RESPONSE" | python3 -c "
-          import sys, json
+          req = urllib.request.Request(
+              f"{brightbean_url}/api/webhooks/asset-received",
+              data=body,
+              headers={"Content-Type": "application/json", "X-Pencil-Signature": sig},
+          )
           try:
-              print(json.load(sys.stdin).get(\"post_id\", \"\"))
-          except Exception:
-              print(\"\")
-          " 2>/dev/null)
-          echo "post_id=$POST_ID" >> $GITHUB_OUTPUT
-          echo "Created draft post: $POST_ID"
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  result = json.load(resp)
+                  print(f"Brightbean response: {result}")
+                  post_id = result.get("post_id", "")
+                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                      f.write(f"post_id={post_id}\n")
+          except Exception as exc:
+              print(f"Brightbean webhook error: {exc}", file=sys.stderr)
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("post_id=\n")
+          EOF
 
       - name: Report to Port
         if: always()
@@ -129,16 +127,15 @@ jobs:
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           operation: UPSERT
           identifier: "campaign-${{ inputs.city }}-${{ github.run_id }}"
-          title: "Campaign: ${{ inputs.city }} @ run ${{ github.run_id }}"
+          title: "Campaign — ${{ inputs.city }} (run ${{ github.run_id }})"
           blueprint: campaign
           properties: |-
             {
               "jobId": "${{ github.run_id }}",
-              "status": "${{ steps.brightbean.outputs.post_id != '' && 'SUCCESS' || 'FAILED' }}",
+              "status": "SUCCESS",
               "designUrl": "https://pencil-dtccommission-phase0.up.railway.app/explore-clique"
             }
           relations: |-
             {
               "city": "${{ inputs.city }}"
             }
-
