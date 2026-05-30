@@ -9,7 +9,10 @@ OPENAPI_SPEC = {
         "version": "1.0.0",
     },
     "servers": [
-        {"url": "https://dtc-brightbean-phase0.up.railway.app", "description": "Phase 0"},
+        {
+            "url": "https://dtc-brightbean-phase0.up.railway.app",
+            "description": "Phase 0",
+        },
     ],
     "paths": {
         "/api/webhooks/asset-received": {
@@ -25,24 +28,32 @@ OPENAPI_SPEC = {
                                 "type": "object",
                                 "required": ["_type", "_id", "url", "platforms"],
                                 "properties": {
-                                    "_type": {
-                                        "type": "string",
-                                        "enum": ["mediaAsset"]
-                                    },
+                                    "_type": {"type": "string", "enum": ["mediaAsset"]},
                                     "_id": {"type": "string"},
                                     "url": {"type": "string", "format": "uri"},
                                     "platforms": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
-                                            "enum": ["facebook", "instagram", "linkedin", "tiktok", "youtube", "pinterest", "threads", "bluesky", "mastodon", "google_business"]
-                                        }
+                                            "enum": [
+                                                "facebook",
+                                                "instagram",
+                                                "linkedin",
+                                                "tiktok",
+                                                "youtube",
+                                                "pinterest",
+                                                "threads",
+                                                "bluesky",
+                                                "mastodon",
+                                                "google_business",
+                                            ],
+                                        },
                                     },
-                                    "approvalToken": {"type": "string"}
-                                }
+                                    "approvalToken": {"type": "string"},
+                                },
                             }
                         }
-                    }
+                    },
                 },
                 "responses": {
                     "200": {
@@ -60,24 +71,24 @@ OPENAPI_SPEC = {
                                                 "type": "object",
                                                 "properties": {
                                                     "platform": {"type": "string"},
-                                                    "post_id": {"type": "string"}
-                                                }
-                                            }
-                                        }
-                                    }
+                                                    "post_id": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    },
                                 }
                             }
-                        }
+                        },
                     },
                     "401": {"description": "Invalid HMAC signature"},
-                    "500": {"description": "Server error"}
-                }
+                    "500": {"description": "Server error"},
+                },
             }
         }
     },
     "tags": [
         {"name": "webhooks", "description": "Inbound webhooks from dtc-media-studio"},
-    ]
+    ],
 }
 
 
@@ -85,6 +96,6 @@ OPENAPI_SPEC = {
 def openapi_spec(request):
     """Serve OpenAPI specification for service discovery"""
     response = JsonResponse(OPENAPI_SPEC)
-    response['Cache-Control'] = 'public, max-age=3600'
-    response['Access-Control-Allow-Origin'] = '*'
+    response["Cache-Control"] = "public, max-age=3600"
+    response["Access-Control-Allow-Origin"] = "*"
     return response
