@@ -3,28 +3,27 @@ on:
   push:
     branches: [main]
 jobs:
-  deploy:
+  report:
+    name: Report deployment to Port
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Railway CLI
-        run: npm i -g @railway/cli
-      - name: Deploy
-        run: railway up --service dtc-brightbean --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       - name: Report deployment to Port
         uses: port-labs/port-github-action@v1
         with:
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           operation: UPSERT
-          identifier: dtc-brightbean-${{ github.sha }}
+          identifier: dtc-brightbean-web-${{ github.sha }}
+          title: "dtc-brightbean-web @ ${{ github.sha }}"
           blueprint: deployment
-          properties: |
+          properties: |-
             {
-              "status": "SUCCESS",
-              "triggered_by": "${{ github.sha }}",
-              "environment": "dtc_commission_phase0",
-              "service": "dtc-brightbean"
+              "createdAt": "${{ github.event.head_commit.timestamp }}",
+              "deploymentStatus": "Success",
+              "environment": "Production"
             }
+          relations: |-
+            {
+              "service": "dtc-brightbean-web"
+            }
+
