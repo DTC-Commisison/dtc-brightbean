@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Worker entrypoint — runs Django migrations then starts background task processor."""
+
 import os
 import subprocess
 import sys
@@ -16,7 +17,4 @@ result = subprocess.run(
 print(f"[1/2] Migrations complete (exit {result.returncode})", flush=True)
 
 print("[2/2] Starting process_tasks...", flush=True)
-sys.exit(
-    subprocess.run([sys.executable, "manage.py", "process_tasks"]).returncode
-)
-
+sys.exit(subprocess.run([sys.executable, "manage.py", "process_tasks"]).returncode)
