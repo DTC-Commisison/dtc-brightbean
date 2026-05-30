@@ -1,0 +1,144 @@
+name: Design & Publish (Pencil → Brightbean)
+
+on:
+  workflow_dispatch:
+    inputs:
+      city:
+        description: "FIFA corridor city key"
+        required: true
+        default: "vancouver"
+        type: choice
+        options:
+          - vancouver
+          - seattle
+          - bay-area
+          - los-angeles
+          - dallas
+          - new-york
+          - miami
+      platforms:
+        description: "Platforms (comma-separated)"
+        required: true
+        default: "instagram,linkedin"
+      workspace_id:
+        description: "Brightbean workspace UUID"
+        required: true
+        default: "9a16be6b-003d-4b93-bf46-fb6792f45e1b"
+      caption:
+        description: "Post caption (auto-generated if blank)"
+        required: false
+
+jobs:
+  design-and-publish:
+    name: "Design ${{ inputs.city }} → Brightbean"
+    runs-on: ubuntu-latest
+    env:
+      PENCIL_URL: https://pencil-dtccommission-phase0.up.railway.app
+      BRIGHTBEAN_URL: https://brightbean-studio-web-dtccommission-phase0.up.railway.app
+
+    steps:
+      - name: Trigger Pencil campaign design
+        id: pencil
+        run: |
+          echo "Triggering Pencil campaign for city: ${{ inputs.city }}"
+          RESPONSE=$(curl -s -w "
+%{http_code}" -X POST \
+            "$PENCIL_URL/api/campaign/${{ inputs.city }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"context\": \"${{ inputs.caption }}\"}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "Pencil response ($HTTP_CODE): $BODY"
+
+          # Wait for HyperFrames render
+          sleep 8
+
+          # Resolve asset URL — prefer campaign response, fall back to static pnw-food-story
+          ASSET_URL=$(echo "$BODY" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              url = d.get(\"assetUrl\") or d.get(\"url\") or d.get(\"compositionUrl\") or \"\"
+              print(url)
+          except Exception:
+              print(\"\")
+          " 2>/dev/null)
+
+          if [ -z "$ASSET_URL" ]; then
+            ASSET_URL="$PENCIL_URL/pnw-food-story/${{ inputs.city }}.png"
+            echo "Falling back to static asset: $ASSET_URL"
+          fi
+
+          echo "asset_url=$ASSET_URL" >> $GITHUB_OUTPUT
+
+      - name: Send asset to Brightbean webhook
+        id: brightbean
+        env:
+          PENCIL_WEBHOOK_SECRET: ${{ secrets.PENCIL_WEBHOOK_SECRET }}
+        run: |
+          ASSET_ID="pencil-${{ inputs.city }}-${{ github.run_id }}"
+          PLATFORMS=$(echo "${{ inputs.platforms }}" | python3 -c "
+          import sys, json
+          raw = sys.stdin.read().strip()
+          print(json.dumps([p.strip() for p in raw.split(\",\") if p.strip()]))
+          ")
+
+          PAYLOAD=$(python3 -c "
+          import json
+          payload = {
+            \"_type\": \"mediaAsset\",
+            \"_id\": \"$ASSET_ID\",
+            \"url\": \"${{ steps.pencil.outputs.asset_url }}\",
+            \"workspace_id\": \"${{ inputs.workspace_id }}\",
+            \"city\": \"${{ inputs.city }}\",
+            \"caption\": \"${{ inputs.caption }}\",
+            \"platforms\": $PLATFORMS,
+          }
+          print(json.dumps(payload))
+          ")
+
+          SIG=$(echo -n "$PAYLOAD" | python3 -c "
+          import sys, hmac, hashlib, os
+          secret = os.environ.get(\"PENCIL_WEBHOOK_SECRET\", \"\").encode()
+          body = sys.stdin.buffer.read()
+          print(\"sha256=\" + hmac.new(secret, body, hashlib.sha256).hexdigest())
+          ")
+
+          RESPONSE=$(curl -s -X POST \
+            "$BRIGHTBEAN_URL/api/webhooks/asset-received" \
+            -H "Content-Type: application/json" \
+            -H "X-Pencil-Signature: $SIG" \
+            -d "$PAYLOAD")
+
+          echo "Brightbean response: $RESPONSE"
+          POST_ID=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              print(json.load(sys.stdin).get(\"post_id\", \"\"))
+          except Exception:
+              print(\"\")
+          " 2>/dev/null)
+          echo "post_id=$POST_ID" >> $GITHUB_OUTPUT
+          echo "Created draft post: $POST_ID"
+
+      - name: Report to Port
+        if: always()
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          operation: UPSERT
+          identifier: "campaign-${{ inputs.city }}-${{ github.run_id }}"
+          title: "Campaign: ${{ inputs.city }} @ run ${{ github.run_id }}"
+          blueprint: campaign
+          properties: |-
+            {
+              "jobId": "${{ github.run_id }}",
+              "status": "${{ steps.brightbean.outputs.post_id != '' && 'SUCCESS' || 'FAILED' }}",
+              "designUrl": "https://pencil-dtccommission-phase0.up.railway.app/explore-clique"
+            }
+          relations: |-
+            {
+              "city": "${{ inputs.city }}"
+            }
+
