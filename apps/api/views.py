@@ -163,10 +163,7 @@ def asset_received(request):
     secret = os.environ.get("PENCIL_WEBHOOK_SECRET", "")
     if secret:
         sig_header = request.headers.get("X-Pencil-Signature", "")
-        expected = (
-            "sha256="
-            + hmac.new(secret.encode(), request.body, hashlib.sha256).hexdigest()
-        )
+        expected = "sha256=" + hmac.new(secret.encode(), request.body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig_header, expected):
             return JsonResponse({"error": "invalid signature"}, status=401)
 
@@ -191,9 +188,7 @@ def asset_received(request):
 
     # ── Resolve workspace ────────────────────────────────────────────────
     try:
-        workspace = Workspace.objects.select_related("organization").get(
-            id=payload["workspace_id"]
-        )
+        workspace = Workspace.objects.select_related("organization").get(id=payload["workspace_id"])
     except (Workspace.DoesNotExist, ValueError):
         return JsonResponse({"error": "workspace not found"}, status=404)
 
@@ -205,24 +200,16 @@ def asset_received(request):
 
     # ── Download asset ───────────────────────────────────────────────────
     try:
-        req = urllib.request.Request(
-            asset_url, headers={"User-Agent": "dtc-brightbean-webhook/1.0"}
-        )
+        req = urllib.request.Request(asset_url, headers={"User-Agent": "dtc-brightbean-webhook/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             content = resp.read()
-            content_type = (
-                resp.headers.get("Content-Type", "image/png").split(";")[0].strip()
-            )
+            content_type = resp.headers.get("Content-Type", "image/png").split(";")[0].strip()
     except Exception as exc:
         return JsonResponse({"error": f"asset fetch failed: {exc}"}, status=502)
 
     ext = _MIME_TO_EXT.get(content_type, "bin")
     filename = f"pencil-{asset_id_str}.{ext}"
-    media_type = (
-        MediaAsset.MediaType.VIDEO
-        if content_type.startswith("video")
-        else MediaAsset.MediaType.IMAGE
-    )
+    media_type = MediaAsset.MediaType.VIDEO if content_type.startswith("video") else MediaAsset.MediaType.IMAGE
     asset_title = f"Pencil — {city or asset_id_str}"
 
     # ── Store in media library ───────────────────────────────────────────
@@ -252,9 +239,7 @@ def asset_received(request):
     # ── Wire PlatformPosts for connected accounts ─────────────────────────
     draft_posts = []
     if platforms:
-        for account in SocialAccount.objects.filter(
-            workspace=workspace, platform__in=platforms
-        ):
+        for account in SocialAccount.objects.filter(workspace=workspace, platform__in=platforms):
             pp = PlatformPost.objects.create(
                 post=post,
                 social_account=account,
