@@ -184,7 +184,7 @@ def asset_received(request):
     if payload["_type"] != "mediaAsset":
         return JsonResponse({"error": "unsupported _type"}, status=400)
 
-    from apps.composer.models import Post, PlatformPost
+    from apps.composer.models import PlatformPost, Post
     from apps.media_library.models import MediaAsset
     from apps.social_accounts.models import SocialAccount
     from apps.workspaces.models import Workspace
